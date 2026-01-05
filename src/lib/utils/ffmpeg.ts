@@ -69,47 +69,19 @@ export async function cutVideo(
 
 /**
  * Convert video to portrait (9:16) with smart cropping
+ * Uses force_original_aspect_ratio=increase to always fill frame without black bars
  */
 export async function convertToPortrait(
     inputPath: string,
     outputPath: string,
     focusX?: number // 0-1, where to focus horizontally (0.5 = center)
 ): Promise<void> {
-    const { width, height } = await getVideoDimensions(inputPath);
+    const focusPoint = focusX !== undefined ? focusX : 0.5;
 
-    // Target portrait dimensions (1080x1920)
-    const targetWidth = 1080;
-    const targetHeight = 1920;
-    const targetRatio = targetWidth / targetHeight; // 0.5625
+    // Scale to cover, crop to portrait, and fix SAR
+    const filterChain = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)*${focusPoint}:(ih-1920)/2,setsar=1`;
 
-    const sourceRatio = width / height;
-
-    let cropWidth: number;
-    let cropHeight: number;
-    let cropX: number;
-    let cropY: number;
-
-    if (sourceRatio > targetRatio) {
-        // Source is wider - crop horizontally
-        cropHeight = height;
-        cropWidth = Math.round(height * targetRatio);
-        cropY = 0;
-
-        // Use focus point or center
-        const maxCropX = width - cropWidth;
-        const focusPoint = focusX !== undefined ? focusX : 0.5;
-        cropX = Math.round(maxCropX * focusPoint);
-        cropX = Math.max(0, Math.min(cropX, maxCropX));
-    } else {
-        // Source is taller or equal - crop vertically
-        cropWidth = width;
-        cropHeight = Math.round(width / targetRatio);
-        cropX = 0;
-        cropY = Math.round((height - cropHeight) / 2);
-    }
-
-    // Crop and scale to 1080x1920
-    const command = `ffmpeg -y -i "${inputPath}" -vf "crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${targetWidth}:${targetHeight}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k "${outputPath}"`;
+    const command = `ffmpeg -y -i "${inputPath}" -vf "${filterChain}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k "${outputPath}"`;
 
     await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
 }
@@ -148,6 +120,7 @@ export async function addSubtitles(
 
 /**
  * Combine multiple processing steps efficiently
+ * Uses force_original_aspect_ratio=increase to always fill frame without black bars
  */
 export async function processClipComplete(
     inputPath: string,
@@ -159,37 +132,10 @@ export async function processClipComplete(
 ): Promise<void> {
     const duration = endTime - startTime;
     const startTimestamp = formatFFmpegTimestamp(startTime);
+    const focusPoint = focusX !== undefined ? focusX : 0.5;
 
-    const { width, height } = await getVideoDimensions(inputPath);
-
-    // Calculate crop for portrait
-    const targetWidth = 1080;
-    const targetHeight = 1920;
-    const targetRatio = targetWidth / targetHeight;
-    const sourceRatio = width / height;
-
-    let cropWidth: number;
-    let cropHeight: number;
-    let cropX: number;
-    let cropY: number;
-
-    if (sourceRatio > targetRatio) {
-        cropHeight = height;
-        cropWidth = Math.round(height * targetRatio);
-        cropY = 0;
-        const maxCropX = width - cropWidth;
-        const focusPoint = focusX !== undefined ? focusX : 0.5;
-        cropX = Math.round(maxCropX * focusPoint);
-        cropX = Math.max(0, Math.min(cropX, maxCropX));
-    } else {
-        cropWidth = width;
-        cropHeight = Math.round(width / targetRatio);
-        cropX = 0;
-        cropY = Math.round((height - cropHeight) / 2);
-    }
-
-    // Build filter chain
-    let filterChain = `crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${targetWidth}:${targetHeight}`;
+    // Build filter chain: scale to cover, crop to exact dimensions, and fix SAR
+    let filterChain = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)*${focusPoint}:(ih-1920)/2,setsar=1`;
 
     // Add subtitles if provided
     if (srtPath) {
@@ -321,36 +267,10 @@ export async function processClipWithHook(
     srtPath?: string,
     focusX?: number
 ): Promise<void> {
-    const { width, height } = await getVideoDimensions(inputPath);
+    const focusPoint = focusX !== undefined ? focusX : 0.5;
 
-    // Calculate crop for portrait
-    const targetWidth = 1080;
-    const targetHeight = 1920;
-    const targetRatio = targetWidth / targetHeight;
-    const sourceRatio = width / height;
-
-    let cropWidth: number;
-    let cropHeight: number;
-    let cropX: number;
-    let cropY: number;
-
-    if (sourceRatio > targetRatio) {
-        cropHeight = height;
-        cropWidth = Math.round(height * targetRatio);
-        cropY = 0;
-        const maxCropX = width - cropWidth;
-        const focusPoint = focusX !== undefined ? focusX : 0.5;
-        cropX = Math.round(maxCropX * focusPoint);
-        cropX = Math.max(0, Math.min(cropX, maxCropX));
-    } else {
-        cropWidth = width;
-        cropHeight = Math.round(width / targetRatio);
-        cropX = 0;
-        cropY = Math.round((height - cropHeight) / 2);
-    }
-
-    // Build base filter chain (crop and scale)
-    const baseFilter = `crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${targetWidth}:${targetHeight}`;
+    // Build base filter chain (scale to cover, crop to exact dimensions, and fix SAR)
+    const baseFilter = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)*${focusPoint}:(ih-1920)/2,setsar=1`;
 
     // Get temp directory from output path
     const tempDir = outputPath.substring(0, outputPath.lastIndexOf('/'));
