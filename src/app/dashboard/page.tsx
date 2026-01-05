@@ -473,9 +473,21 @@ export default function Dashboard() {
                             <span className="gradient-text">Clip</span>Genius
                         </span>
                     </Link>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                        Dashboard
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <Link href="/settings" style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textDecoration: 'none' }}>
+                            ⚙️ Settings
+                        </Link>
+                        <button
+                            onClick={async () => {
+                                await fetch('/api/auth/logout', { method: 'POST' });
+                                window.location.href = '/login';
+                            }}
+                            className="btn btn-ghost"
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                        >
+                            🚪 Logout
+                        </button>
+                    </div>
                 </div>
             </header>
 
