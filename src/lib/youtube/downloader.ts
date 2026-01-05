@@ -136,9 +136,9 @@ export async function downloadVideo(
     console.log(`Downloading video ${videoId}...`);
 
     try {
-        // Use a simpler format selection that works better
+        // Download highest quality: prioritize 1080p, then best available
         const cookiesOpt = await getCookiesOption();
-        const command = `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" -f "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best" --merge-output-format mp4 --no-playlist -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
+        const command = `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" -f "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 --no-playlist -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
 
         console.log('Running command:', command);
 
