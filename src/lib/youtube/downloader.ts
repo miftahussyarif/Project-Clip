@@ -8,7 +8,20 @@ import { parseYouTubeUrl } from './parser';
 const execAsync = promisify(exec);
 
 const TEMP_DIR = path.join(process.cwd(), 'temp');
+const COOKIES_FILE = path.join(process.cwd(), 'cookies.txt');
 const YT_DLP = 'yt-dlp'; // Use PATH lookup for cross-platform compatibility
+
+/**
+ * Get cookies option if cookies file exists
+ */
+async function getCookiesOption(): Promise<string> {
+    try {
+        await fs.access(COOKIES_FILE);
+        return `--cookies "${COOKIES_FILE}"`;
+    } catch {
+        return '';
+    }
+}
 
 /**
  * Ensure temp directory exists
@@ -48,8 +61,9 @@ export async function getVideoInfo(url: string): Promise<VideoInfo> {
     }
 
     try {
+        const cookiesOpt = await getCookiesOption();
         const { stdout, stderr } = await execAsync(
-            `${YT_DLP} --dump-json --no-download "https://www.youtube.com/watch?v=${videoId}"`,
+            `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" --dump-json --no-download "https://www.youtube.com/watch?v=${videoId}"`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
@@ -123,7 +137,8 @@ export async function downloadVideo(
 
     try {
         // Use a simpler format selection that works better
-        const command = `${YT_DLP} -f "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best" --merge-output-format mp4 --no-playlist -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
+        const cookiesOpt = await getCookiesOption();
+        const command = `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" -f "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best" --merge-output-format mp4 --no-playlist -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
 
         console.log('Running command:', command);
 

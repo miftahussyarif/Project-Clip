@@ -1,10 +1,25 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs/promises';
+import path from 'path';
 import { Transcript, TranscriptSegment } from '@/types';
 import { parseYouTubeUrl } from './parser';
 
 const execAsync = promisify(exec);
+const COOKIES_FILE = path.join(process.cwd(), 'cookies.txt');
 const YT_DLP = 'yt-dlp'; // Use PATH lookup for cross-platform compatibility
+
+/**
+ * Get cookies option if cookies file exists
+ */
+async function getCookiesOption(): Promise<string> {
+    try {
+        await fs.access(COOKIES_FILE);
+        return `--cookies "${COOKIES_FILE}"`;
+    } catch {
+        return '';
+    }
+}
 
 /**
  * Get transcript/subtitles from YouTube video using yt-dlp
@@ -17,8 +32,9 @@ export async function getTranscript(url: string): Promise<Transcript> {
 
     try {
         // Try to get auto-generated subtitles first, then manual
+        const cookiesOpt = await getCookiesOption();
         const { stdout } = await execAsync(
-            `${YT_DLP} --write-auto-sub --write-sub --sub-lang en,id --skip-download --sub-format json3 --print-json "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null || echo "{}"`,
+            `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" --write-auto-sub --write-sub --sub-lang en,id --skip-download --sub-format json3 --print-json "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null || echo "{}"`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
@@ -84,9 +100,10 @@ async function getTranscriptFallback(videoId: string): Promise<Transcript> {
     try {
         // Use yt-dlp to download subtitles to a temp file
         const tempFile = `/tmp/${videoId}_subs`;
+        const cookiesOpt = await getCookiesOption();
 
         await execAsync(
-            `${YT_DLP} --write-auto-sub --write-sub --sub-lang en,id --skip-download --convert-subs srt -o "${tempFile}" "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null`,
+            `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" --write-auto-sub --write-sub --sub-lang en,id --skip-download --convert-subs srt -o "${tempFile}" "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
