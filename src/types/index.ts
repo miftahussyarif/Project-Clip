@@ -144,6 +144,17 @@ export interface ClipProject {
     channelName: string;
     createdAt: string;
     clips: string[]; // List of clip filenames
+    clipMetadata?: Record<string, ClipMetadata>; // Metadata keyed by filename
+}
+
+// Clip metadata for library display
+export interface ClipMetadata {
+    title?: string;
+    hook?: string;
+    hookTimestamp?: string;
+    content?: string;
+    timestamp?: string;
+    duration?: number;
 }
 
 // Saved clip with project reference
@@ -154,6 +165,7 @@ export interface SavedClip {
     createdAt: string;
     projectId?: string;
     downloadUrl: string;
+    metadata?: ClipMetadata;
 }
 
 // Projects metadata file structure

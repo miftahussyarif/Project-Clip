@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
-import { ClipRecommendation, ProcessingJob, ClipJob, Transcript, ClipProject, ProjectsMetadata, VideoInfo } from '@/types';
+import { ClipRecommendation, ProcessingJob, ClipJob, Transcript, ClipProject, ProjectsMetadata, VideoInfo, ClipMetadata } from '@/types';
 import { processClipComplete, checkFFmpeg, processClipWithHook } from '@/lib/utils/ffmpeg';
 import { generateSrt } from './captioner';
 import { ensureDir, sanitizeFileName } from '@/lib/utils/helpers';
@@ -280,9 +280,9 @@ export async function createProject(videoInfo: VideoInfo, youtubeUrl: string): P
 }
 
 /**
- * Add a clip to an existing project
+ * Add a clip to an existing project with optional metadata
  */
-export async function addClipToProject(projectId: string, clipFilename: string): Promise<void> {
+export async function addClipToProject(projectId: string, clipFilename: string, metadata?: ClipMetadata): Promise<void> {
     const projects = await getProjects();
     const project = projects.find(p => p.id === projectId);
 
@@ -292,8 +292,17 @@ export async function addClipToProject(projectId: string, clipFilename: string):
 
     if (!project.clips.includes(clipFilename)) {
         project.clips.push(clipFilename);
-        await saveProjects(projects);
     }
+
+    // Store metadata if provided
+    if (metadata) {
+        if (!project.clipMetadata) {
+            project.clipMetadata = {};
+        }
+        project.clipMetadata[clipFilename] = metadata;
+    }
+
+    await saveProjects(projects);
 }
 
 /**
@@ -316,7 +325,7 @@ export async function getProjectByVideoId(videoId: string): Promise<ClipProject 
  * Get processed clips grouped by project
  */
 export async function getProcessedClipsGroupedByProject(): Promise<{
-    projects: (ClipProject & { clipDetails: { filename: string; size: number; createdAt: Date; downloadUrl: string }[] })[];
+    projects: (ClipProject & { clipDetails: { filename: string; size: number; createdAt: Date; downloadUrl: string; metadata?: ClipMetadata }[] })[];
     uncategorizedClips: { filename: string; size: number; createdAt: Date; downloadUrl: string }[];
 }> {
     await ensureDir(OUTPUT_DIR);
@@ -343,6 +352,7 @@ export async function getProcessedClipsGroupedByProject(): Promise<{
                             size: stats.size,
                             createdAt: stats.birthtime,
                             downloadUrl: `/api/clips/${encodeURIComponent(clipFilename)}`,
+                            metadata: project.clipMetadata?.[clipFilename],
                         };
                     } catch {
                         return null;

@@ -39,11 +39,20 @@ export default function Dashboard() {
     const [selectedManualClips, setSelectedManualClips] = useState<Set<string>>(new Set());
 
     // Clips library state - Project-based
+    interface ClipMetadataLocal {
+        title?: string;
+        hook?: string;
+        hookTimestamp?: string;
+        content?: string;
+        timestamp?: string;
+        duration?: number;
+    }
     interface ProjectClipDetail {
         filename: string;
         size: number;
         createdAt: string;
         downloadUrl: string;
+        metadata?: ClipMetadataLocal;
     }
     interface ProjectWithClips {
         id: string;
@@ -1329,46 +1338,137 @@ export default function Dashboard() {
                                                         No clips in this project yet.
                                                     </p>
                                                 ) : (
-                                                    <div style={{ display: 'grid', gap: '0.75rem', marginTop: '1rem' }}>
-                                                        {project.clipDetails.map((clip) => (
+                                                    <div style={{ display: 'grid', gap: '1rem', marginTop: '1rem' }}>
+                                                        {project.clipDetails.map((clip, clipIndex) => (
                                                             <div
                                                                 key={clip.filename}
                                                                 style={{
-                                                                    display: 'flex',
-                                                                    justifyContent: 'space-between',
-                                                                    alignItems: 'center',
-                                                                    padding: '0.75rem 1rem',
+                                                                    padding: '1.25rem',
                                                                     background: 'var(--bg-secondary)',
-                                                                    borderRadius: 'var(--radius-sm)',
-                                                                    gap: '1rem',
-                                                                    flexWrap: 'wrap',
+                                                                    borderRadius: 'var(--radius-md)',
+                                                                    border: '1px solid rgba(255, 255, 255, 0.05)',
                                                                 }}
                                                             >
-                                                                <div style={{ flex: 1, minWidth: '200px' }}>
-                                                                    <h5 style={{ fontWeight: 500, marginBottom: '0.15rem', fontSize: '0.9rem' }}>
-                                                                        🎬 {clip.filename.replace(/_[a-f0-9]{8}\.mp4$/, '')}
-                                                                    </h5>
-                                                                    <div style={{ display: 'flex', gap: '0.75rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                                                                        <span>📏 {formatFileSize(clip.size)}</span>
-                                                                        <span>📅 {new Date(clip.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                                                                    <div style={{ flex: 1, minWidth: '200px' }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                                                                            <span style={{
+                                                                                padding: '0.25rem 0.75rem',
+                                                                                background: 'var(--gradient-primary)',
+                                                                                borderRadius: 'var(--radius-full)',
+                                                                                fontSize: '0.75rem',
+                                                                                fontWeight: 600,
+                                                                                color: 'white',
+                                                                            }}>
+                                                                                Clip {clipIndex + 1}
+                                                                            </span>
+                                                                            <h5 style={{ fontWeight: 600, fontSize: '1rem' }}>
+                                                                                {clip.metadata?.title || clip.filename.replace(/_[a-f0-9]{8}\.mp4$/, '')}
+                                                                            </h5>
+                                                                        </div>
+
+                                                                        {/* Hook Text */}
+                                                                        {clip.metadata?.hook && (
+                                                                            <div
+                                                                                style={{
+                                                                                    padding: '0.75rem 1rem',
+                                                                                    background: 'var(--bg-primary)',
+                                                                                    borderRadius: 'var(--radius-sm)',
+                                                                                    fontSize: '0.85rem',
+                                                                                    color: 'var(--text-muted)',
+                                                                                    fontStyle: 'italic',
+                                                                                    borderLeft: '3px solid var(--primary-500)',
+                                                                                    marginBottom: '0.75rem',
+                                                                                    cursor: 'pointer',
+                                                                                }}
+                                                                                onClick={() => {
+                                                                                    navigator.clipboard.writeText(clip.metadata?.hook || '');
+                                                                                    alert('Hook copied!');
+                                                                                }}
+                                                                                title="Click to copy hook"
+                                                                            >
+                                                                                &quot;{clip.metadata.hook}&quot;
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Content Text */}
+                                                                        {clip.metadata?.content && (
+                                                                            <p
+                                                                                style={{
+                                                                                    color: 'var(--text-secondary)',
+                                                                                    fontSize: '0.85rem',
+                                                                                    marginBottom: '0.5rem',
+                                                                                    cursor: 'pointer',
+                                                                                }}
+                                                                                onClick={() => {
+                                                                                    navigator.clipboard.writeText(clip.metadata?.content || '');
+                                                                                    alert('Content copied!');
+                                                                                }}
+                                                                                title="Click to copy content"
+                                                                            >
+                                                                                {clip.metadata.content}
+                                                                            </p>
+                                                                        )}
+
+                                                                        <div style={{ display: 'flex', gap: '0.75rem', color: 'var(--text-muted)', fontSize: '0.75rem', flexWrap: 'wrap' }}>
+                                                                            <span>📏 {formatFileSize(clip.size)}</span>
+                                                                            <span>📅 {new Date(clip.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                                        </div>
                                                                     </div>
-                                                                </div>
-                                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                                    <a
-                                                                        href={clip.downloadUrl}
-                                                                        className="btn btn-primary"
-                                                                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem' }}
-                                                                        download
-                                                                    >
-                                                                        ⬇️ Download
-                                                                    </a>
-                                                                    <button
-                                                                        className="btn btn-ghost"
-                                                                        onClick={() => handleDeleteClip(clip.filename)}
-                                                                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', color: '#ef4444' }}
-                                                                    >
-                                                                        🗑️
-                                                                    </button>
+
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+                                                                        {clip.metadata?.timestamp && (
+                                                                            <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                                                                ⏱️ {clip.metadata.timestamp}
+                                                                            </div>
+                                                                        )}
+                                                                        {clip.metadata?.hookTimestamp && (
+                                                                            <div style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '0.25rem',
+                                                                                padding: '0.25rem 0.75rem',
+                                                                                background: 'rgba(139, 92, 246, 0.15)',
+                                                                                borderRadius: 'var(--radius-full)',
+                                                                                fontSize: '0.75rem',
+                                                                                color: '#a78bfa',
+                                                                            }}>
+                                                                                🎣 Hook: {clip.metadata.hookTimestamp}
+                                                                            </div>
+                                                                        )}
+                                                                        {clip.metadata?.duration && (
+                                                                            <div style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '0.25rem',
+                                                                                padding: '0.25rem 0.75rem',
+                                                                                background: 'rgba(16, 185, 129, 0.15)',
+                                                                                borderRadius: 'var(--radius-full)',
+                                                                                fontSize: '0.8rem',
+                                                                                color: '#34d399',
+                                                                            }}>
+                                                                                📏 {clip.metadata.duration}s
+                                                                            </div>
+                                                                        )}
+
+                                                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                                                            <a
+                                                                                href={clip.downloadUrl}
+                                                                                className="btn btn-primary"
+                                                                                style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem' }}
+                                                                                download
+                                                                            >
+                                                                                ⬇️ Download
+                                                                            </a>
+                                                                            <button
+                                                                                className="btn btn-ghost"
+                                                                                onClick={() => handleDeleteClip(clip.filename)}
+                                                                                style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', color: '#ef4444' }}
+                                                                            >
+                                                                                🗑️
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         ))}

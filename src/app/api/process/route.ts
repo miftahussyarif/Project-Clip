@@ -4,6 +4,14 @@ import { parseYouTubeUrl } from '@/lib/youtube/parser';
 import { processAllClips, createProject, addClipToProject, getProjectByVideoId } from '@/lib/video/processor';
 import { ClipRecommendation, Transcript } from '@/types';
 
+// Helper to format seconds to HH:MM:SS
+function formatTime(seconds: number): string {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
 export const maxDuration = 300; // 5 minutes timeout for processing
 
 export async function POST(request: NextRequest) {
@@ -63,12 +71,22 @@ export async function POST(request: NextRequest) {
             transcript
         );
 
-        // Step 3: Add successful clips to project
+        // Step 3: Add successful clips to project with metadata
         const successes = results.filter(r => !r.error);
         for (const result of successes) {
             const clipFilename = result.outputPath.split('/').pop();
-            if (clipFilename && currentProjectId) {
-                await addClipToProject(currentProjectId, clipFilename);
+            const clip = clips.find(c => c.id === result.clipId);
+            if (clipFilename && currentProjectId && clip) {
+                await addClipToProject(currentProjectId, clipFilename, {
+                    title: clip.title,
+                    hook: clip.hookStatement,
+                    hookTimestamp: clip.hookStartTime && clip.hookEndTime
+                        ? `[${formatTime(clip.hookStartTime)}] - [${formatTime(clip.hookEndTime)}]`
+                        : undefined,
+                    content: clip.description,
+                    timestamp: `[${formatTime(clip.startTime)}] - [${formatTime(clip.endTime)}]`,
+                    duration: clip.duration,
+                });
             }
         }
 
