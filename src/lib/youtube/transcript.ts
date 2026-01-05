@@ -4,7 +4,7 @@ import { Transcript, TranscriptSegment } from '@/types';
 import { parseYouTubeUrl } from './parser';
 
 const execAsync = promisify(exec);
-const YT_DLP = '/usr/local/bin/yt-dlp'; // Use explicit path for latest version
+const YT_DLP = 'yt-dlp'; // Use PATH lookup for cross-platform compatibility
 
 /**
  * Get transcript/subtitles from YouTube video using yt-dlp

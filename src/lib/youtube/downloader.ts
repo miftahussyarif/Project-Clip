@@ -8,7 +8,7 @@ import { parseYouTubeUrl } from './parser';
 const execAsync = promisify(exec);
 
 const TEMP_DIR = path.join(process.cwd(), 'temp');
-const YT_DLP = '/usr/local/bin/yt-dlp'; // Use explicit path for latest version
+const YT_DLP = 'yt-dlp'; // Use PATH lookup for cross-platform compatibility
 
 /**
  * Ensure temp directory exists
