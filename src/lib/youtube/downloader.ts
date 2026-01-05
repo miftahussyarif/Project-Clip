@@ -63,7 +63,7 @@ export async function getVideoInfo(url: string): Promise<VideoInfo> {
     try {
         const cookiesOpt = await getCookiesOption();
         const { stdout, stderr } = await execAsync(
-            `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" --dump-json --no-download "https://www.youtube.com/watch?v=${videoId}"`,
+            `${YT_DLP} ${cookiesOpt} --dump-json --no-download "https://www.youtube.com/watch?v=${videoId}"`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
@@ -138,7 +138,7 @@ export async function downloadVideo(
     try {
         // Download best available quality with flexible format selection
         const cookiesOpt = await getCookiesOption();
-        const command = `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" -f "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b" --merge-output-format mp4 --no-playlist -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
+        const command = `${YT_DLP} ${cookiesOpt} -f "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b" --merge-output-format mp4 --no-playlist -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
 
         console.log('Running command:', command);
 

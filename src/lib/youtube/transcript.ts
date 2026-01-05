@@ -34,7 +34,7 @@ export async function getTranscript(url: string): Promise<Transcript> {
         // Try to get auto-generated subtitles first, then manual
         const cookiesOpt = await getCookiesOption();
         const { stdout } = await execAsync(
-            `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" --write-auto-sub --write-sub --sub-lang en,id --skip-download --sub-format json3 --print-json "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null || echo "{}"`,
+            `${YT_DLP} ${cookiesOpt} --write-auto-sub --write-sub --sub-lang en,id --skip-download --sub-format json3 --print-json "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null || echo "{}"`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
@@ -103,7 +103,7 @@ async function getTranscriptFallback(videoId: string): Promise<Transcript> {
         const cookiesOpt = await getCookiesOption();
 
         await execAsync(
-            `${YT_DLP} ${cookiesOpt} --extractor-args "youtube:player_client=android" --write-auto-sub --write-sub --sub-lang en,id --skip-download --convert-subs srt -o "${tempFile}" "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null`,
+            `${YT_DLP} ${cookiesOpt} --write-auto-sub --write-sub --sub-lang en,id --skip-download --convert-subs srt -o "${tempFile}" "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
