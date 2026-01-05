@@ -1,8 +1,9 @@
-import { cleanupOldFiles } from '@/lib/utils/cleanup';
-
 export async function register() {
-    // Only run cleanup on server start in production
+    // Only run cleanup on server start in Node.js runtime
     if (process.env.NEXT_RUNTIME === 'nodejs') {
+        // Dynamic import to avoid Edge Runtime evaluation
+        const { cleanupOldFiles } = await import('@/lib/utils/cleanup');
+
         console.log('[Startup] Running initial cleanup...');
 
         // Run cleanup on server start
@@ -18,7 +19,8 @@ export async function register() {
         setInterval(async () => {
             console.log('[Scheduled] Running periodic cleanup...');
             try {
-                await cleanupOldFiles();
+                const { cleanupOldFiles: cleanup } = await import('@/lib/utils/cleanup');
+                await cleanup();
             } catch (error) {
                 console.error('[Scheduled] Cleanup error:', error);
             }
