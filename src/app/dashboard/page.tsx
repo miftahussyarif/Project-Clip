@@ -315,8 +315,16 @@ export default function Dashboard() {
         setStatus('processing');
         setStatusMessage(`Processing ${clipsToProcess.length} clip(s)...`);
         setError(null);
-        setProgress(0);
+        setProgress(5);
         setProcessResults([]);
+
+        // Simulate progress while waiting for API
+        const progressInterval = setInterval(() => {
+            setProgress(prev => {
+                if (prev >= 90) return prev;
+                return prev + Math.random() * 8 + 2; // Random increment 2-10%
+            });
+        }, 1500);
 
         try {
             const response = await fetch('/api/process', {
@@ -329,6 +337,7 @@ export default function Dashboard() {
                 }),
             });
 
+            clearInterval(progressInterval);
             const data = await response.json();
 
             if (!data.success) {
@@ -340,12 +349,17 @@ export default function Dashboard() {
             setStatus('completed');
             setStatusMessage(`Successfully processed ${data.data.processed} clip(s)!`);
 
+            // Refresh projects after processing
+            fetchProjects();
+
         } catch (err) {
+            clearInterval(progressInterval);
             setError((err as Error).message);
             setStatus('error');
             setStatusMessage('');
+            setProgress(0);
         }
-    }, [url, selectedManualClips, parsedClips]);
+    }, [url, selectedManualClips, parsedClips, fetchProjects]);
 
     const handleProcess = useCallback(async () => {
         if (selectedClips.size === 0) {
@@ -358,8 +372,16 @@ export default function Dashboard() {
         setStatus('processing');
         setStatusMessage(`Processing ${clipsToProcess.length} clip(s)...`);
         setError(null);
-        setProgress(0);
+        setProgress(5);
         setProcessResults([]);
+
+        // Simulate progress while waiting for API
+        const progressInterval = setInterval(() => {
+            setProgress(prev => {
+                if (prev >= 90) return prev;
+                return prev + Math.random() * 8 + 2; // Random increment 2-10%
+            });
+        }, 1500);
 
         try {
             const response = await fetch('/api/process', {
@@ -372,6 +394,7 @@ export default function Dashboard() {
                 }),
             });
 
+            clearInterval(progressInterval);
             const data = await response.json();
 
             if (!data.success) {
@@ -383,12 +406,17 @@ export default function Dashboard() {
             setStatus('completed');
             setStatusMessage(`Successfully processed ${data.data.processed} clip(s)!`);
 
+            // Refresh projects after processing
+            fetchProjects();
+
         } catch (err) {
+            clearInterval(progressInterval);
             setError((err as Error).message);
             setStatus('error');
             setStatusMessage('');
+            setProgress(0);
         }
-    }, [url, selectedClips, recommendations, transcript]);
+    }, [url, selectedClips, recommendations, transcript, fetchProjects]);
 
     const toggleClipSelection = (clipId: string) => {
         setSelectedClips(prev => {
