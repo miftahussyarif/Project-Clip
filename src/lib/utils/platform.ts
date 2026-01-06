@@ -44,8 +44,12 @@ export function suppressStderr(): string {
  * Linux: relies on PATH
  */
 export async function findExecutable(name: string): Promise<string> {
+    const fs = await import('fs/promises');
+
     // Common executable names per platform
     const execName = isWindows() ? `${name}.exe` : name;
+
+    console.log(`[Platform] Searching for executable: ${name} (platform: ${process.platform})`);
 
     // First, try simple PATH lookup
     try {
@@ -53,49 +57,78 @@ export async function findExecutable(name: string): Promise<string> {
         const { stdout } = await execAsync(checkCmd);
         if (stdout.trim()) {
             const firstPath = stdout.trim().split('\n')[0].trim();
-            console.log(`Found ${name} at: ${firstPath}`);
+            console.log(`[Platform] Found ${name} in PATH: ${firstPath}`);
             return name; // Use simple name since it's in PATH
         }
     } catch {
-        // Not in PATH, continue searching
+        console.log(`[Platform] ${name} not found in PATH, searching common locations...`);
     }
 
     // Windows-specific search locations
     if (isWindows()) {
-        const windowsPaths = [
-            // Python user scripts (pip install --user)
-            path.join(process.env.APPDATA || '', 'Python', 'Python314', 'Scripts', execName),
-            path.join(process.env.APPDATA || '', 'Python', 'Python313', 'Scripts', execName),
-            path.join(process.env.APPDATA || '', 'Python', 'Python312', 'Scripts', execName),
-            path.join(process.env.APPDATA || '', 'Python', 'Python311', 'Scripts', execName),
-            path.join(process.env.APPDATA || '', 'Python', 'Python310', 'Scripts', execName),
-            // Python global scripts
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python314', 'Scripts', execName),
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python313', 'Scripts', execName),
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'Scripts', execName),
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'Scripts', execName),
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'Scripts', execName),
-            // Chocolatey
-            path.join('C:', 'ProgramData', 'chocolatey', 'bin', execName),
-            // Scoop
-            path.join(process.env.USERPROFILE || '', 'scoop', 'shims', execName),
-            // Common FFmpeg locations
-            path.join('C:', 'ffmpeg', 'bin', execName),
-            path.join('C:', 'Program Files', 'ffmpeg', 'bin', execName),
-        ];
+        const userProfile = process.env.USERPROFILE || 'C:\\Users\\Default';
+        const appData = process.env.APPDATA || path.join(userProfile, 'AppData', 'Roaming');
+        const localAppData = process.env.LOCALAPPDATA || path.join(userProfile, 'AppData', 'Local');
+
+        const pythonVersions = ['Python314', 'Python313', 'Python312', 'Python311', 'Python310', 'Python39', 'Python38'];
+
+        const windowsPaths: string[] = [];
+
+        // Python user scripts (pip install --user) - in APPDATA\Roaming
+        for (const pyVer of pythonVersions) {
+            windowsPaths.push(path.join(appData, 'Python', pyVer, 'Scripts', execName));
+        }
+
+        // Python global scripts (pip install) - in LOCALAPPDATA\Programs
+        for (const pyVer of pythonVersions) {
+            windowsPaths.push(path.join(localAppData, 'Programs', 'Python', pyVer, 'Scripts', execName));
+        }
+
+        // Python in standard install locations
+        for (const pyVer of pythonVersions) {
+            windowsPaths.push(path.join('C:\\', pyVer, 'Scripts', execName));
+            windowsPaths.push(path.join('C:\\', 'Program Files', pyVer, 'Scripts', execName));
+        }
+
+        // Chocolatey
+        windowsPaths.push(path.join('C:\\', 'ProgramData', 'chocolatey', 'bin', execName));
+
+        // Scoop
+        windowsPaths.push(path.join(userProfile, 'scoop', 'shims', execName));
+        windowsPaths.push(path.join(userProfile, 'scoop', 'apps', name, 'current', execName));
+
+        // Common FFmpeg locations
+        windowsPaths.push(path.join('C:\\', 'ffmpeg', 'bin', execName));
+        windowsPaths.push(path.join('C:\\', 'Program Files', 'ffmpeg', 'bin', execName));
+        windowsPaths.push(path.join('C:\\', 'Program Files (x86)', 'ffmpeg', 'bin', execName));
+        windowsPaths.push(path.join(localAppData, 'Microsoft', 'WinGet', 'Packages', `*${name}*`, execName));
+
+        // Common yt-dlp locations
+        if (name === 'yt-dlp') {
+            windowsPaths.push(path.join(userProfile, 'yt-dlp', execName));
+            windowsPaths.push(path.join('C:\\', 'yt-dlp', execName));
+        }
 
         for (const execPath of windowsPaths) {
             try {
+                // First check if file exists
+                await fs.access(execPath);
+                console.log(`[Platform] Found ${name} file at: ${execPath}`);
+
+                // Then verify it runs
                 await execAsync(`"${execPath}" --version`);
-                console.log(`Found ${name} at: ${execPath}`);
+                console.log(`[Platform] Verified ${name} works at: ${execPath}`);
                 return `"${execPath}"`;
             } catch {
                 // Continue searching
             }
         }
+
+        console.log(`[Platform] ${name} not found in any known Windows location`);
     }
 
     // If not found anywhere, return the simple name and let it fail with a proper error
+    console.log(`[Platform] Returning simple name '${name}' - may fail if not in PATH`);
     return name;
 }
 
