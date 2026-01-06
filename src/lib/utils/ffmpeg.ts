@@ -1,19 +1,46 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
+import path from 'path';
+import { getFFmpegPath, getFFprobePath } from '@/lib/utils/platform';
 
 const execAsync = promisify(exec);
+
+// Cached executable paths
+let cachedFFmpegPath: string | null = null;
+let cachedFFprobePath: string | null = null;
 
 /**
  * Check if FFmpeg is installed
  */
 export async function checkFFmpeg(): Promise<boolean> {
     try {
-        await execAsync('ffmpeg -version');
+        cachedFFmpegPath = await getFFmpegPath();
+        await execAsync(`${cachedFFmpegPath} -version`);
         return true;
     } catch {
         return false;
     }
+}
+
+/**
+ * Get the FFmpeg command (cached)
+ */
+async function getFFmpegCmd(): Promise<string> {
+    if (!cachedFFmpegPath) {
+        cachedFFmpegPath = await getFFmpegPath();
+    }
+    return cachedFFmpegPath;
+}
+
+/**
+ * Get the FFprobe command (cached)
+ */
+async function getFFprobeCmd(): Promise<string> {
+    if (!cachedFFprobePath) {
+        cachedFFprobePath = await getFFprobePath();
+    }
+    return cachedFFprobePath;
 }
 
 /**
@@ -22,8 +49,9 @@ export async function checkFFmpeg(): Promise<boolean> {
 export async function getVideoDimensions(
     inputPath: string
 ): Promise<{ width: number; height: number }> {
+    const ffprobeCmd = await getFFprobeCmd();
     const { stdout } = await execAsync(
-        `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${inputPath}"`
+        `${ffprobeCmd} -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${inputPath}"`
     );
     const [width, height] = stdout.trim().split('x').map(Number);
     return { width, height };
@@ -33,8 +61,9 @@ export async function getVideoDimensions(
  * Get video duration in seconds
  */
 export async function getVideoDuration(inputPath: string): Promise<number> {
+    const ffprobeCmd = await getFFprobeCmd();
     const { stdout } = await execAsync(
-        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${inputPath}"`
+        `${ffprobeCmd} -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${inputPath}"`
     );
     return parseFloat(stdout.trim());
 }
@@ -60,9 +89,10 @@ export async function cutVideo(
 ): Promise<void> {
     const duration = endTime - startTime;
     const startTimestamp = formatFFmpegTimestamp(startTime);
+    const ffmpegCmd = await getFFmpegCmd();
 
     // Use -ss before -i for fast seeking, then accurate trimming
-    const command = `ffmpeg -y -ss ${startTimestamp} -i "${inputPath}" -t ${duration} -c:v libx264 -c:a aac -avoid_negative_ts make_zero "${outputPath}"`;
+    const command = `${ffmpegCmd} -y -ss ${startTimestamp} -i "${inputPath}" -t ${duration} -c:v libx264 -c:a aac -avoid_negative_ts make_zero "${outputPath}"`;
 
     await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
 }
@@ -77,11 +107,12 @@ export async function convertToPortrait(
     focusX?: number // 0-1, where to focus horizontally (0.5 = center)
 ): Promise<void> {
     const focusPoint = focusX !== undefined ? focusX : 0.5;
+    const ffmpegCmd = await getFFmpegCmd();
 
     // Scale to cover, crop to portrait, and fix SAR
     const filterChain = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)*${focusPoint}:(ih-1920)/2,setsar=1`;
 
-    const command = `ffmpeg -y -i "${inputPath}" -vf "${filterChain}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k "${outputPath}"`;
+    const command = `${ffmpegCmd} -y -i "${inputPath}" -vf "${filterChain}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k "${outputPath}"`;
 
     await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
 }
@@ -108,12 +139,13 @@ export async function addSubtitles(
         outlineColor = '&H000000', // Black
         bold = true,
     } = style || {};
+    const ffmpegCmd = await getFFmpegCmd();
 
     // ASS style formatting
     const boldValue = bold ? 1 : 0;
     const forceStyle = `FontName=${fontName},FontSize=${fontSize},PrimaryColour=${primaryColor},OutlineColour=${outlineColor},Bold=${boldValue},Alignment=2,MarginV=50`;
 
-    const command = `ffmpeg -y -i "${inputPath}" -vf "subtitles='${srtPath}':force_style='${forceStyle}'" -c:v libx264 -crf 23 -preset medium -c:a copy "${outputPath}"`;
+    const command = `${ffmpegCmd} -y -i "${inputPath}" -vf "subtitles='${srtPath}':force_style='${forceStyle}'" -c:v libx264 -crf 23 -preset medium -c:a copy "${outputPath}"`;
 
     await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
 }
@@ -133,6 +165,7 @@ export async function processClipComplete(
     const duration = endTime - startTime;
     const startTimestamp = formatFFmpegTimestamp(startTime);
     const focusPoint = focusX !== undefined ? focusX : 0.5;
+    const ffmpegCmd = await getFFmpegCmd();
 
     // Build filter chain: scale to cover, crop to exact dimensions, and fix SAR
     let filterChain = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)*${focusPoint}:(ih-1920)/2,setsar=1`;
@@ -144,7 +177,7 @@ export async function processClipComplete(
         filterChain += `,subtitles='${escapedSrtPath}':force_style='FontName=Arial,FontSize=28,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Bold=1,Alignment=2,MarginV=60,Outline=2,Shadow=1'`;
     }
 
-    const command = `ffmpeg -y -ss ${startTimestamp} -i "${inputPath}" -t ${duration} -vf "${filterChain}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -r 30 "${outputPath}"`;
+    const command = `${ffmpegCmd} -y -ss ${startTimestamp} -i "${inputPath}" -t ${duration} -vf "${filterChain}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -r 30 "${outputPath}"`;
 
     await execAsync(command, { maxBuffer: 100 * 1024 * 1024 });
 }
@@ -158,8 +191,9 @@ export async function getVideoInfo(inputPath: string): Promise<{
     duration: number;
     fps: number;
 }> {
+    const ffprobeCmd = await getFFprobeCmd();
     const { stdout } = await execAsync(
-        `ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,duration -show_entries format=duration -of json "${inputPath}"`
+        `${ffprobeCmd} -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,duration -show_entries format=duration -of json "${inputPath}"`
     );
 
     const data = JSON.parse(stdout);
@@ -204,7 +238,8 @@ export async function concatenateVideos(
     await fs.writeFile(listPath, listContent);
 
     try {
-        const command = `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${outputPath}"`;
+        const ffmpegCmd = await getFFmpegCmd();
+        const command = `${ffmpegCmd} -y -f concat -safe 0 -i "${listPath}" -c copy "${outputPath}"`;
         await execAsync(command, { maxBuffer: 100 * 1024 * 1024 });
     } finally {
         // Cleanup list file
@@ -247,7 +282,8 @@ export async function concatenateWithFadeToBlack(
 
     // Use xfade with fadeblack effect for fade-to-black transition
     // fadeblack: fades current video to black, then fades in the next video from black
-    const command = `ffmpeg -y -i "${firstVideo}" -i "${secondVideo}" -filter_complex "[0:v][1:v]xfade=transition=fadeblack:duration=${fadeDuration}:offset=${offset}[v];[0:a][1:a]acrossfade=d=${fadeDuration}[a]" -map "[v]" -map "[a]" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k "${outputPath}"`;
+    const ffmpegCmd = await getFFmpegCmd();
+    const command = `${ffmpegCmd} -y -i "${firstVideo}" -i "${secondVideo}" -filter_complex "[0:v][1:v]xfade=transition=fadeblack:duration=${fadeDuration}:offset=${offset}[v];[0:a][1:a]acrossfade=d=${fadeDuration}[a]" -map "[v]" -map "[a]" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k "${outputPath}"`;
 
     await execAsync(command, { maxBuffer: 100 * 1024 * 1024 });
 }
@@ -268,23 +304,24 @@ export async function processClipWithHook(
     focusX?: number
 ): Promise<void> {
     const focusPoint = focusX !== undefined ? focusX : 0.5;
+    const ffmpegCmd = await getFFmpegCmd();
 
     // Build base filter chain (scale to cover, crop to exact dimensions, and fix SAR)
     const baseFilter = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)*${focusPoint}:(ih-1920)/2,setsar=1`;
 
-    // Get temp directory from output path
-    const tempDir = outputPath.substring(0, outputPath.lastIndexOf('/'));
-    const baseName = outputPath.substring(outputPath.lastIndexOf('/') + 1, outputPath.lastIndexOf('.'));
+    // Get temp directory from output path (cross-platform)
+    const tempDir = path.dirname(outputPath);
+    const baseName = path.basename(outputPath, '.mp4');
 
     // Process hook segment
-    const hookPath = `${tempDir}/${baseName}_hook_temp.mp4`;
+    const hookPath = path.join(tempDir, `${baseName}_hook_temp.mp4`);
     const hookDuration = hookEnd - hookStart;
     const hookStartTimestamp = formatFFmpegTimestamp(hookStart);
-    const hookCommand = `ffmpeg -y -ss ${hookStartTimestamp} -i "${inputPath}" -t ${hookDuration} -vf "${baseFilter}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -r 30 "${hookPath}"`;
+    const hookCommand = `${ffmpegCmd} -y -ss ${hookStartTimestamp} -i "${inputPath}" -t ${hookDuration} -vf "${baseFilter}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -r 30 "${hookPath}"`;
     await execAsync(hookCommand, { maxBuffer: 100 * 1024 * 1024 });
 
     // Process main clip segment
-    const mainPath = `${tempDir}/${baseName}_main_temp.mp4`;
+    const mainPath = path.join(tempDir, `${baseName}_main_temp.mp4`);
     const mainDuration = mainEnd - mainStart;
     const mainStartTimestamp = formatFFmpegTimestamp(mainStart);
 
@@ -295,7 +332,7 @@ export async function processClipWithHook(
         mainFilter += `,subtitles='${escapedSrtPath}':force_style='FontName=Arial,FontSize=28,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Bold=1,Alignment=2,MarginV=60,Outline=2,Shadow=1'`;
     }
 
-    const mainCommand = `ffmpeg -y -ss ${mainStartTimestamp} -i "${inputPath}" -t ${mainDuration} -vf "${mainFilter}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -r 30 "${mainPath}"`;
+    const mainCommand = `${ffmpegCmd} -y -ss ${mainStartTimestamp} -i "${inputPath}" -t ${mainDuration} -vf "${mainFilter}" -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k -r 30 "${mainPath}"`;
     await execAsync(mainCommand, { maxBuffer: 100 * 1024 * 1024 });
 
     // Concatenate hook + main clip with fade-to-black transition (500ms / 0.5 seconds)

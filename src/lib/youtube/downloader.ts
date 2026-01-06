@@ -4,12 +4,12 @@ import path from 'path';
 import fs from 'fs/promises';
 import { VideoInfo } from '@/types';
 import { parseYouTubeUrl } from './parser';
+import { getYtDlpPath, isWindows } from '@/lib/utils/platform';
 
 const execAsync = promisify(exec);
 
 const TEMP_DIR = path.join(process.cwd(), 'temp');
 const COOKIES_FILE = path.join(process.cwd(), 'cookies.txt');
-const YT_DLP = 'yt-dlp'; // Use PATH lookup for cross-platform compatibility
 
 /**
  * Get cookies option if cookies file exists
@@ -35,15 +35,26 @@ async function ensureTempDir(): Promise<void> {
 }
 
 /**
- * Check if yt-dlp is installed
+ * Check if yt-dlp is installed and get its path
  */
-async function checkYtDlp(): Promise<boolean> {
+async function checkYtDlp(): Promise<string | null> {
     try {
-        await execAsync(`${YT_DLP} --version`);
-        return true;
+        const ytDlpPath = await getYtDlpPath();
+        await execAsync(`${ytDlpPath} --version`);
+        return ytDlpPath;
     } catch {
-        return false;
+        return null;
     }
+}
+
+/**
+ * Get installation error message based on platform
+ */
+function getYtDlpInstallError(): string {
+    if (isWindows()) {
+        return 'yt-dlp is not installed or not found. Please install it with: pip install yt-dlp (and make sure Python Scripts folder is in your PATH)';
+    }
+    return 'yt-dlp is not installed. Please install it with: sudo apt install yt-dlp';
 }
 
 /**
@@ -55,15 +66,15 @@ export async function getVideoInfo(url: string): Promise<VideoInfo> {
         throw new Error('Invalid YouTube URL');
     }
 
-    const isInstalled = await checkYtDlp();
-    if (!isInstalled) {
-        throw new Error('yt-dlp is not installed. Please install it with: sudo apt install yt-dlp');
+    const ytDlpPath = await checkYtDlp();
+    if (!ytDlpPath) {
+        throw new Error(getYtDlpInstallError());
     }
 
     try {
         const cookiesOpt = await getCookiesOption();
         const { stdout, stderr } = await execAsync(
-            `${YT_DLP} ${cookiesOpt} --dump-json --no-download "https://www.youtube.com/watch?v=${videoId}"`,
+            `${ytDlpPath} ${cookiesOpt} --dump-json --no-download "https://www.youtube.com/watch?v=${videoId}"`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
@@ -112,9 +123,9 @@ export async function downloadVideo(
         throw new Error('Invalid YouTube URL');
     }
 
-    const isInstalled = await checkYtDlp();
-    if (!isInstalled) {
-        throw new Error('yt-dlp is not installed. Please install it with: sudo apt install yt-dlp');
+    const ytDlpPath = await checkYtDlp();
+    if (!ytDlpPath) {
+        throw new Error(getYtDlpInstallError());
     }
 
     const outputPath = path.join(TEMP_DIR, `${videoId}.mp4`);
@@ -138,7 +149,7 @@ export async function downloadVideo(
     try {
         // Download best available quality with flexible format selection
         const cookiesOpt = await getCookiesOption();
-        const command = `${YT_DLP} ${cookiesOpt} -f "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b" --merge-output-format mp4 --no-playlist -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
+        const command = `${ytDlpPath} ${cookiesOpt} -f "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b" --merge-output-format mp4 --no-playlist -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
 
         console.log('Running command:', command);
 

@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Transcript, TranscriptSegment } from '@/types';
+import { getFFmpegPath, getFFprobePath } from '@/lib/utils/platform';
 
 const execAsync = promisify(exec);
 const TEMP_DIR = path.join(process.cwd(), 'temp');
@@ -34,8 +35,9 @@ async function ensureTempDir(): Promise<void> {
  * Extract audio from video file
  */
 export async function extractAudio(videoPath: string, outputPath: string): Promise<void> {
+    const ffmpegCmd = await getFFmpegPath();
     // Extract audio as mp3 with reduced quality for faster processing
-    const command = `ffmpeg -y -i "${videoPath}" -vn -acodec libmp3lame -ar 16000 -ac 1 -ab 64k "${outputPath}"`;
+    const command = `${ffmpegCmd} -y -i "${videoPath}" -vn -acodec libmp3lame -ar 16000 -ac 1 -ab 64k "${outputPath}"`;
     await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
 }
 
@@ -48,9 +50,12 @@ export async function splitAudioIntoChunks(
 ): Promise<string[]> {
     await ensureTempDir();
 
+    const ffprobeCmd = await getFFprobePath();
+    const ffmpegCmd = await getFFmpegPath();
+
     // Get total duration
     const { stdout: durationOutput } = await execAsync(
-        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`
+        `${ffprobeCmd} -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`
     );
     const totalDuration = parseFloat(durationOutput.trim());
 
@@ -70,7 +75,7 @@ export async function splitAudioIntoChunks(
         const chunkPath = path.join(TEMP_DIR, `${baseName}_chunk_${chunkIndex}.mp3`);
         const duration = Math.min(chunkDurationSeconds, totalDuration - startTime);
 
-        const command = `ffmpeg -y -ss ${startTime} -i "${audioPath}" -t ${duration} -acodec libmp3lame -ar 16000 -ac 1 -ab 64k "${chunkPath}"`;
+        const command = `${ffmpegCmd} -y -ss ${startTime} -i "${audioPath}" -t ${duration} -acodec libmp3lame -ar 16000 -ac 1 -ab 64k "${chunkPath}"`;
         await execAsync(command, { maxBuffer: 50 * 1024 * 1024 });
 
         chunks.push(chunkPath);

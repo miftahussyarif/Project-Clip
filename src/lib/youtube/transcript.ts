@@ -2,12 +2,13 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import { Transcript, TranscriptSegment } from '@/types';
 import { parseYouTubeUrl } from './parser';
+import { getYtDlpPath, suppressStderr, isWindows } from '@/lib/utils/platform';
 
 const execAsync = promisify(exec);
 const COOKIES_FILE = path.join(process.cwd(), 'cookies.txt');
-const YT_DLP = 'yt-dlp'; // Use PATH lookup for cross-platform compatibility
 
 /**
  * Get cookies option if cookies file exists
@@ -33,8 +34,10 @@ export async function getTranscript(url: string): Promise<Transcript> {
     try {
         // Try to get auto-generated subtitles first, then manual
         const cookiesOpt = await getCookiesOption();
+        const ytDlpPath = await getYtDlpPath();
+        const nullRedirect = suppressStderr();
         const { stdout } = await execAsync(
-            `${YT_DLP} ${cookiesOpt} --write-auto-sub --write-sub --sub-lang en,id --skip-download --sub-format json3 --print-json "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null || echo "{}"`,
+            `${ytDlpPath} ${cookiesOpt} --write-auto-sub --write-sub --sub-lang en,id --skip-download --sub-format json3 --print-json "https://www.youtube.com/watch?v=${videoId}" ${nullRedirect}`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
@@ -99,20 +102,44 @@ export async function getTranscript(url: string): Promise<Transcript> {
 async function getTranscriptFallback(videoId: string): Promise<Transcript> {
     try {
         // Use yt-dlp to download subtitles to a temp file
-        const tempFile = `/tmp/${videoId}_subs`;
+        const tempDir = os.tmpdir();
+        const tempFile = path.join(tempDir, `${videoId}_subs`);
         const cookiesOpt = await getCookiesOption();
+        const ytDlpPath = await getYtDlpPath();
+        const nullRedirect = suppressStderr();
 
         await execAsync(
-            `${YT_DLP} ${cookiesOpt} --write-auto-sub --write-sub --sub-lang en,id --skip-download --convert-subs srt -o "${tempFile}" "https://www.youtube.com/watch?v=${videoId}" 2>/dev/null`,
+            `${ytDlpPath} ${cookiesOpt} --write-auto-sub --write-sub --sub-lang en,id --skip-download --convert-subs srt -o "${tempFile}" "https://www.youtube.com/watch?v=${videoId}" ${nullRedirect}`,
             { maxBuffer: 10 * 1024 * 1024 }
         );
 
-        // Try to read the subtitle file
-        const { stdout: srtContent } = await execAsync(`cat ${tempFile}*.srt 2>/dev/null || echo ""`);
+        // Find and read subtitle files
+        const files = await fs.readdir(tempDir);
+        const srtFiles = files.filter(f => f.startsWith(`${videoId}_subs`) && f.endsWith('.srt'));
+
+        let srtContent = '';
+        for (const srtFile of srtFiles) {
+            try {
+                const content = await fs.readFile(path.join(tempDir, srtFile), 'utf-8');
+                srtContent += content;
+                // Cleanup
+                await fs.unlink(path.join(tempDir, srtFile));
+            } catch {
+                // Ignore read errors
+            }
+        }
+
+        // Also cleanup any .vtt files
+        const vttFiles = files.filter(f => f.startsWith(`${videoId}_subs`) && f.endsWith('.vtt'));
+        for (const vttFile of vttFiles) {
+            try {
+                await fs.unlink(path.join(tempDir, vttFile));
+            } catch {
+                // Ignore cleanup errors
+            }
+        }
 
         if (srtContent) {
-            // Clean up
-            await execAsync(`rm -f ${tempFile}*.srt ${tempFile}*.vtt 2>/dev/null`);
             return parseSrtTranscript(srtContent, 'en');
         }
 
