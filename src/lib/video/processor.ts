@@ -82,6 +82,12 @@ export async function processAllClips(
                 clipId: clip.id,
                 outputPath,
             });
+
+            // Add 1 second delay before processing next clip to reduce memory pressure
+            // and allow each clip to be ready for download immediately
+            if (clips.indexOf(clip) < clips.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
         } catch (error) {
             console.error(`Error processing clip ${clip.id}:`, error);
             results.push({
