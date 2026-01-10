@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { ClipRecommendation, ProcessingJob, ClipJob, Transcript, ClipProject, ProjectsMetadata, VideoInfo, ClipMetadata } from '@/types';
-import { processClipComplete, checkFFmpeg, processClipWithHook } from '@/lib/utils/ffmpeg';
+import { processClipComplete, checkFFmpeg } from '@/lib/utils/ffmpeg';
 import { generateSrt } from './captioner';
 import { ensureDir, sanitizeFileName } from '@/lib/utils/helpers';
 
@@ -54,39 +54,16 @@ export async function processAllClips(
             const outputFileName = `${sanitizedTitle}_${clip.id.substring(0, 8)}.mp4`;
             const outputPath = path.join(OUTPUT_DIR, outputFileName);
 
-            // Check if clip has hook timestamps for hook-first processing
-            // Skip hook-first if hook timestamp is the same as clip start (hook is already at beginning)
-            const hasHookTimestamps = clip.hookStartTime !== undefined &&
-                clip.hookEndTime !== undefined &&
-                clip.hookStartTime < clip.hookEndTime;
-
-            // Check if hook is at the beginning of the clip - if so, skip hook-first processing
-            const hookIsAtClipStart = hasHookTimestamps &&
-                clip.hookStartTime === clip.startTime;
-
-            if (hasHookTimestamps && !hookIsAtClipStart) {
-                // Process with hook-first: hook segment is prepended to main clip
-                await processClipWithHook(
-                    videoPath,
-                    outputPath,
-                    clip.hookStartTime!,
-                    clip.hookEndTime!,
-                    clip.startTime,
-                    clip.endTime,
-                    srtPath, // Will be undefined if no transcript
-                    0.5 // Center focus for now
-                );
-            } else {
-                // Process the clip normally (cut, frame, caption if available, render)
-                await processClipComplete(
-                    videoPath,
-                    outputPath,
-                    clip.startTime,
-                    clip.endTime,
-                    srtPath, // Will be undefined if no transcript
-                    0.5 // Center focus for now
-                );
-            }
+            // Process the clip using startTime to endTime
+            // Hook timestamps are stored as metadata only, not used for cutting
+            await processClipComplete(
+                videoPath,
+                outputPath,
+                clip.startTime,
+                clip.endTime,
+                srtPath, // Will be undefined if no transcript
+                0.5 // Center focus for now
+            );
 
             onProgress?.(clip.id, 90, 'Finalizing...');
 

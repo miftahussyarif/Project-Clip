@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import path from 'path';
 import { downloadVideo, getVideoInfo } from '@/lib/youtube/downloader';
 import { parseYouTubeUrl } from '@/lib/youtube/parser';
 import { processAllClips, createProject, addClipToProject, getProjectByVideoId } from '@/lib/video/processor';
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
         // Step 3: Add successful clips to project with metadata
         const successes = results.filter(r => !r.error);
         for (const result of successes) {
-            const clipFilename = result.outputPath.split('/').pop();
+            const clipFilename = path.basename(result.outputPath);
             const clip = clips.find(c => c.id === result.clipId);
             if (clipFilename && currentProjectId && clip) {
                 await addClipToProject(currentProjectId, clipFilename, {
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
                     clipId: r.clipId,
                     success: !r.error,
                     outputPath: r.outputPath,
-                    downloadUrl: r.outputPath ? `/api/clips/${encodeURIComponent(r.outputPath.split('/').pop() || '')}` : null,
+                    downloadUrl: r.outputPath ? `/api/clips/${encodeURIComponent(path.basename(r.outputPath))}` : null,
                     error: r.error,
                 })),
             },
