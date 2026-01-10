@@ -6,6 +6,7 @@ import { VideoInfo, ClipRecommendation, Transcript, TranscriptAnalysis, CrucialP
 
 type ProcessingStatus = 'idle' | 'fetching' | 'analyzing' | 'processing' | 'completed' | 'error';
 type AnalysisMode = 'quick' | 'detailed' | 'manual';
+type VideoSourceType = 'youtube' | 'upload';
 
 interface ProcessResult {
     clipId: string;
@@ -37,6 +38,13 @@ export default function Dashboard() {
     const [manualAnalysisText, setManualAnalysisText] = useState('');
     const [parsedClips, setParsedClips] = useState<ClippingIdea[]>([]);
     const [selectedManualClips, setSelectedManualClips] = useState<Set<string>>(new Set());
+
+    // Video source state (YouTube URL or local upload)
+    const [videoSource, setVideoSource] = useState<VideoSourceType>('youtube');
+    const [uploadedVideoPath, setUploadedVideoPath] = useState<string | null>(null);
+    const [uploadedVideoInfo, setUploadedVideoInfo] = useState<VideoInfo | null>(null);
+    const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     // Clips library state - Project-based
     interface ClipMetadataLocal {
@@ -174,6 +182,41 @@ export default function Dashboard() {
         return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     };
 
+    // Handle video file upload
+    const handleVideoUpload = useCallback(async (file: File) => {
+        setIsUploading(true);
+        setError(null);
+        setStatusMessage('Uploading video...');
+
+        try {
+            const formData = new FormData();
+            formData.append('video', file);
+
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to upload video');
+            }
+
+            setUploadedVideoPath(data.data.videoPath);
+            setUploadedVideoInfo(data.data.videoInfo);
+            setUploadedFileName(file.name);
+            setStatusMessage(`Video "${file.name}" uploaded successfully!`);
+        } catch (err) {
+            setError((err as Error).message);
+            setUploadedVideoPath(null);
+            setUploadedVideoInfo(null);
+            setUploadedFileName(null);
+        } finally {
+            setIsUploading(false);
+        }
+    }, []);
+
     const handleAnalyze = useCallback(async () => {
         if (!url.trim()) {
             setError('Please enter a YouTube URL');
@@ -247,8 +290,13 @@ export default function Dashboard() {
             return;
         }
 
-        if (!url.trim()) {
+        // Check video source
+        if (videoSource === 'youtube' && !url.trim()) {
             setError('Please enter the YouTube URL first');
+            return;
+        }
+        if (videoSource === 'upload' && !uploadedVideoPath) {
+            setError('Please upload a video file first');
             return;
         }
 
@@ -283,7 +331,7 @@ export default function Dashboard() {
             setStatusMessage('');
             setProgress(0);
         }
-    }, [manualAnalysisText, url]);
+    }, [manualAnalysisText, url, videoSource, uploadedVideoPath]);
 
     const handleProcessManualClips = useCallback(async () => {
         if (selectedManualClips.size === 0) {
@@ -291,8 +339,13 @@ export default function Dashboard() {
             return;
         }
 
-        if (!url.trim()) {
+        // Check video source
+        if (videoSource === 'youtube' && !url.trim()) {
             setError('Please enter a YouTube URL');
+            return;
+        }
+        if (videoSource === 'upload' && !uploadedVideoPath) {
+            setError('Please upload a video file');
             return;
         }
 
@@ -327,14 +380,15 @@ export default function Dashboard() {
         }, 1500);
 
         try {
+            // Build request body based on video source
+            const requestBody = videoSource === 'youtube'
+                ? { url, clips: clipsToProcess, transcript: null }
+                : { videoPath: uploadedVideoPath, videoInfo: uploadedVideoInfo, clips: clipsToProcess, transcript: null };
+
             const response = await fetch('/api/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url,
-                    clips: clipsToProcess,
-                    transcript: null,
-                }),
+                body: JSON.stringify(requestBody),
             });
 
             clearInterval(progressInterval);
@@ -359,7 +413,7 @@ export default function Dashboard() {
             setStatusMessage('');
             setProgress(0);
         }
-    }, [url, selectedManualClips, parsedClips, fetchProjects]);
+    }, [url, selectedManualClips, parsedClips, fetchProjects, videoSource, uploadedVideoPath, uploadedVideoInfo]);
 
     const handleProcess = useCallback(async () => {
         if (selectedClips.size === 0) {
@@ -599,21 +653,134 @@ export default function Dashboard() {
                                 : 'AI generates detailed analysis with crucial parts and clipping ideas.'}
                     </p>
 
-                    {/* YouTube URL Input */}
-                    <div style={{ marginBottom: '1rem' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                            YouTube Video URL *
-                        </label>
-                        <input
-                            type="text"
-                            className="input"
-                            placeholder="https://www.youtube.com/watch?v=..."
-                            value={url}
-                            onChange={(e) => setUrl(e.target.value)}
-                            style={{ width: '100%' }}
-                            disabled={status === 'analyzing' || status === 'processing'}
-                        />
-                    </div>
+                    {/* Video Source Toggle (only for manual mode) */}
+                    {analysisMode === 'manual' && (
+                        <div style={{ marginBottom: '1rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                Video Source
+                            </label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button
+                                    onClick={() => setVideoSource('youtube')}
+                                    disabled={status === 'analyzing' || status === 'processing' || isUploading}
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: 'none',
+                                        background: videoSource === 'youtube' ? 'var(--primary-600)' : 'var(--bg-tertiary)',
+                                        color: videoSource === 'youtube' ? 'white' : 'var(--text-secondary)',
+                                        cursor: 'pointer',
+                                        fontWeight: 500,
+                                        fontSize: '0.9rem',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                >
+                                    🔗 YouTube URL
+                                </button>
+                                <button
+                                    onClick={() => setVideoSource('upload')}
+                                    disabled={status === 'analyzing' || status === 'processing' || isUploading}
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: 'none',
+                                        background: videoSource === 'upload' ? 'var(--primary-600)' : 'var(--bg-tertiary)',
+                                        color: videoSource === 'upload' ? 'white' : 'var(--text-secondary)',
+                                        cursor: 'pointer',
+                                        fontWeight: 500,
+                                        fontSize: '0.9rem',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                >
+                                    📁 Upload File
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* YouTube URL Input (for YouTube source or non-manual modes) */}
+                    {(videoSource === 'youtube' || analysisMode !== 'manual') && (
+                        <div style={{ marginBottom: '1rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                YouTube Video URL *
+                            </label>
+                            <input
+                                type="text"
+                                className="input"
+                                placeholder="https://www.youtube.com/watch?v=..."
+                                value={url}
+                                onChange={(e) => setUrl(e.target.value)}
+                                style={{ width: '100%' }}
+                                disabled={status === 'analyzing' || status === 'processing'}
+                            />
+                        </div>
+                    )}
+
+                    {/* Video File Upload (for upload source in manual mode) */}
+                    {videoSource === 'upload' && analysisMode === 'manual' && (
+                        <div style={{ marginBottom: '1rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                Upload Video File *
+                            </label>
+                            <div style={{
+                                padding: '1.5rem',
+                                background: 'var(--bg-tertiary)',
+                                borderRadius: 'var(--radius-md)',
+                                border: '2px dashed rgba(99, 102, 241, 0.3)',
+                                textAlign: 'center',
+                            }}>
+                                {uploadedFileName ? (
+                                    <div>
+                                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>✅</div>
+                                        <p style={{ color: 'var(--primary-400)', fontWeight: 500 }}>{uploadedFileName}</p>
+                                        <button
+                                            onClick={() => {
+                                                setUploadedVideoPath(null);
+                                                setUploadedVideoInfo(null);
+                                                setUploadedFileName(null);
+                                            }}
+                                            className="btn btn-ghost"
+                                            style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                ) : isUploading ? (
+                                    <div>
+                                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>⏳</div>
+                                        <p style={{ color: 'var(--text-muted)' }}>Uploading video...</p>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📹</div>
+                                        <p style={{ color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                                            Drag & drop or click to select video
+                                        </p>
+                                        <input
+                                            type="file"
+                                            accept="video/*"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) handleVideoUpload(file);
+                                            }}
+                                            style={{ display: 'none' }}
+                                            id="video-upload"
+                                        />
+                                        <label
+                                            htmlFor="video-upload"
+                                            className="btn btn-secondary"
+                                            style={{ cursor: 'pointer' }}
+                                        >
+                                            Select Video File
+                                        </label>
+                                        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+                                            Supports: MP4, WebM, MOV, AVI, MKV
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Manual Analysis Input */}
                     {analysisMode === 'manual' && (

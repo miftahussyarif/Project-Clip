@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
+import fs from 'fs/promises';
 import { downloadVideo, getVideoInfo } from '@/lib/youtube/downloader';
 import { parseYouTubeUrl } from '@/lib/youtube/parser';
 import { processAllClips, createProject, addClipToProject, getProjectByVideoId } from '@/lib/video/processor';
-import { ClipRecommendation, Transcript } from '@/types';
+import { ClipRecommendation, Transcript, VideoInfo } from '@/types';
+import { v4 as uuidv4 } from 'uuid';
 
 // Helper to format seconds to HH:MM:SS
 function formatTime(seconds: number): string {
@@ -15,18 +17,30 @@ function formatTime(seconds: number): string {
 
 export const maxDuration = 300; // 5 minutes timeout for processing
 
+interface ProcessRequest {
+    url?: string; // YouTube URL (optional if videoPath is provided)
+    videoPath?: string; // Local video path from upload (optional if url is provided)
+    videoInfo?: VideoInfo; // Video info for uploaded videos
+    clips: ClipRecommendation[];
+    transcript: Transcript | null;
+    projectId?: string; // Optional: if provided, add clips to existing project
+}
+
 export async function POST(request: NextRequest) {
     try {
-        const { url, clips, transcript: providedTranscript, projectId } = await request.json() as {
-            url: string;
-            clips: ClipRecommendation[];
-            transcript: Transcript | null;
-            projectId?: string; // Optional: if provided, add clips to existing project
-        };
+        const { url, videoPath, videoInfo: providedVideoInfo, clips, transcript: providedTranscript, projectId } = await request.json() as ProcessRequest;
 
-        if (!url || !clips || clips.length === 0) {
+        // Need either URL or videoPath
+        if (!url && !videoPath) {
             return NextResponse.json(
-                { success: false, error: 'URL and clips are required' },
+                { success: false, error: 'Either YouTube URL or video path is required' },
+                { status: 400 }
+            );
+        }
+
+        if (!clips || clips.length === 0) {
+            return NextResponse.json(
+                { success: false, error: 'Clips are required' },
                 { status: 400 }
             );
         }
@@ -38,16 +52,51 @@ export async function POST(request: NextRequest) {
             language: 'auto',
         };
 
-        const videoId = parseYouTubeUrl(url);
-        if (!videoId) {
-            return NextResponse.json(
-                { success: false, error: 'Invalid YouTube URL' },
-                { status: 400 }
-            );
-        }
+        let finalVideoPath: string;
+        let videoInfo: VideoInfo;
+        let videoId: string;
 
-        // Get video info for project creation
-        const videoInfo = await getVideoInfo(url);
+        if (videoPath) {
+            // Using uploaded video
+            // Verify file exists
+            try {
+                await fs.access(videoPath);
+            } catch {
+                return NextResponse.json(
+                    { success: false, error: 'Uploaded video file not found' },
+                    { status: 400 }
+                );
+            }
+
+            finalVideoPath = videoPath;
+            videoId = providedVideoInfo?.id || uuidv4();
+            videoInfo = providedVideoInfo || {
+                id: videoId,
+                title: path.basename(videoPath, path.extname(videoPath)),
+                description: 'Uploaded video',
+                duration: 0,
+                thumbnail: '',
+                channelName: 'Local Upload',
+                viewCount: 0,
+                publishedAt: new Date().toISOString(),
+            };
+        } else {
+            // Using YouTube URL
+            const parsedVideoId = parseYouTubeUrl(url!);
+            if (!parsedVideoId) {
+                return NextResponse.json(
+                    { success: false, error: 'Invalid YouTube URL' },
+                    { status: 400 }
+                );
+            }
+            videoId = parsedVideoId;
+
+            // Get video info for project creation
+            videoInfo = await getVideoInfo(url!);
+
+            // Download the video
+            finalVideoPath = await downloadVideo(url!);
+        }
 
         // Get or create project
         let currentProjectId = projectId;
@@ -57,22 +106,20 @@ export async function POST(request: NextRequest) {
             if (existingProject) {
                 currentProjectId = existingProject.id;
             } else {
-                const newProject = await createProject(videoInfo, url);
+                const projectUrl = url || `local://${path.basename(videoPath!)}`;
+                const newProject = await createProject(videoInfo, projectUrl);
                 currentProjectId = newProject.id;
             }
         }
 
-        // Step 1: Download the video
-        const videoPath = await downloadVideo(url);
-
-        // Step 2: Process all clips
+        // Process all clips
         const results = await processAllClips(
-            videoPath,
+            finalVideoPath,
             clips,
             transcript
         );
 
-        // Step 3: Add successful clips to project with metadata
+        // Add successful clips to project with metadata
         const successes = results.filter(r => !r.error);
         for (const result of successes) {
             const clipFilename = path.basename(result.outputPath);
@@ -117,4 +164,3 @@ export async function POST(request: NextRequest) {
         );
     }
 }
-
